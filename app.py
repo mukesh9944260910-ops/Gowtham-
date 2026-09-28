@@ -7,6 +7,7 @@ import edge_tts
 from google import genai
 from google.genai import types
 import streamlit as st
+from pydantic import BaseModel
 
 MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.1-flash-lite")
 OUT = Path("output")
@@ -27,15 +28,40 @@ Split it into scenes. Return ONLY valid JSON, no markdown fences:
 }}"""
 
 
+class Scene(BaseModel):
+    narration: str
+    visual_prompt: str
+
+
+class Story(BaseModel):
+    youtube_title: str
+    description: str
+    tags: list[str]
+    scenes: list[Scene]
+
+
 def generate(title, minutes):
     client = genai.Client()  # uses GEMINI_API_KEY
-    resp = client.models.generate_content(
-        model=MODEL,
-        contents=PROMPT.format(title=title, minutes=minutes),
-        config=types.GenerateContentConfig(response_mime_type="application/json"),
-    )
-    text = re.sub(r"^```(?:json)?|```$", "", resp.text.strip(), flags=re.M).strip()
-    return json.loads(text)
+    last = None
+    for _ in range(3):
+        try:
+            resp = client.models.generate_content(
+                model=MODEL,
+                contents=PROMPT.format(title=title, minutes=minutes),
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=Story,
+                    max_output_tokens=16000,
+                ),
+            )
+            if resp.parsed:
+                return resp.parsed.model_dump()
+            text = re.sub(r"^```(?:json)?|```$", "", resp.text.strip(), flags=re.M).strip()
+            return json.loads(text)
+        except Exception as e:
+            last = e
+            time.sleep(3)
+    raise last
 
 
 VOICES = {
