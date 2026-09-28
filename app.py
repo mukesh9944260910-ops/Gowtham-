@@ -1,4 +1,4 @@
-import asyncio, json, re, time
+import asyncio, base64, io, json, re, time, wave
 from pathlib import Path
 
 import os
@@ -8,7 +8,6 @@ from google import genai
 from google.genai import types
 import streamlit as st
 
-VOICE = "ta-IN-ValluvarNeural"  # Tamil male voice
 MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.1-flash-lite")
 OUT = Path("output")
 
@@ -39,8 +38,66 @@ def generate(title, minutes):
     return json.loads(text)
 
 
-def make_voice(text, path):
-    asyncio.run(edge_tts.Communicate(text, VOICE, rate="-5%").save(str(path)))
+VOICES = {
+    "Valluvar (India)": "ta-IN-ValluvarNeural",
+    "Kumar (Sri Lanka)": "ta-LK-KumarNeural",
+    "Anbu (Singapore)": "ta-SG-AnbuNeural",
+    "Surya (Malaysia)": "ta-MY-SuryaNeural",
+}
+
+
+def make_voice(texts, path, voice, rate, pitch):
+    async def run():
+        parts = []
+        for t in texts:
+            tmp = path.with_suffix(".part.mp3")
+            await edge_tts.Communicate(t, voice, rate=rate, pitch=pitch).save(str(tmp))
+            parts.append(tmp.read_bytes())
+            tmp.unlink()
+        path.write_bytes(b"".join(parts))
+
+    asyncio.run(run())
+
+
+GEMINI_VOICES = {
+    "Charon (informative)": "Charon",
+    "Orus (firm)": "Orus",
+    "Iapetus (clear)": "Iapetus",
+    "Rasalgethi (informative)": "Rasalgethi",
+    "Algenib (gravelly, deep)": "Algenib",
+    "Alnilam (firm)": "Alnilam",
+    "Fenrir (excitable)": "Fenrir",
+}
+STYLE = "deep, calm, devotional storyteller voice, narrating slowly with warmth and emotion"
+
+
+def gemini_voice(texts, path, voice, model, style):
+    client = genai.Client()
+    frames, params = [], None
+    for t in texts:
+        for attempt in range(3):
+            try:
+                it = client.interactions.create(
+                    model=model,
+                    input=[{"type": "user_input", "content": [{
+                        "type": "text", "text": t,
+                        "annotations": [{"type": "speech_metadata", "style": style}],
+                    }]}],
+                    response_format={"type": "audio"},
+                    generation_config={"speech_config": [{"voice": voice}]},
+                )
+                break
+            except Exception:
+                if attempt == 2:
+                    raise
+                time.sleep(25)  # free tier rate limit, wait and retry
+        with wave.open(io.BytesIO(base64.b64decode(it.output_audio.data))) as w:
+            params = w.getparams()
+            frames.append(w.readframes(w.getnframes()))
+            frames.append(b"\x00" * params.sampwidth * params.framerate // 2)  # 0.5s gap
+    with wave.open(str(path), "wb") as out:
+        out.setparams(params)
+        out.writeframes(b"".join(frames))
 
 
 st.set_page_config(page_title="Puranam Pesum Studio", page_icon="🪔")
@@ -74,16 +131,41 @@ if data:
             st.code(s["visual_prompt"], language=None)
 
     st.header("Male voice")
-    if st.button("Generate voice"):
-        with st.spinner("Voice generate aaguthu..."):
-            full = "\n\n".join(s["narration"] for s in data["scenes"])
-            (folder / "script.txt").write_text(full, encoding="utf-8")
-            mp3 = folder / "voice.mp3"
-            make_voice(full, mp3)
-            st.session_state.audio = mp3
+    engine = st.radio("Voice engine", ["Gemini (best quality)", "Edge (backup)"])
+    if engine.startswith("Gemini"):
+        vname = st.selectbox("Voice", list(GEMINI_VOICES))
+        gmodel = st.selectbox("Model", ["gemini-3.8-flash-lite-tts", "gemini-3.8-flash-tts"])
+        style = st.text_input("Style", STYLE)
+        ext = "wav"
+
+        def synth(texts, path):
+            gemini_voice(texts, path, GEMINI_VOICES[vname], gmodel, style)
+    else:
+        vname = st.selectbox("Voice", list(VOICES))
+        speed = st.slider("Speed", -30, 10, -10, format="%d%%")
+        pitch = st.slider("Pitch", -30, 10, -8, format="%dHz")
+        ext = "mp3"
+
+        def synth(texts, path):
+            make_voice(texts, path, VOICES[vname], f"{speed:+d}%", f"{pitch:+d}Hz")
+
+    c1, c2 = st.columns(2)
+    if c1.button("Test (scene 1)"):
+        with st.spinner("Test voice..."):
+            t = folder / f"test.{ext}"
+            synth([data["scenes"][0]["narration"]], t)
+            st.audio(str(t))
+    if c2.button("Full voice", type="primary"):
+        with st.spinner("Voice generate aaguthu, konjam neram aagum..."):
+            (folder / "script.txt").write_text(
+                "\n\n".join(x["narration"] for x in data["scenes"]), encoding="utf-8")
+            out = folder / f"voice.{ext}"
+            synth([x["narration"] for x in data["scenes"]], out)
+            st.session_state.audio = out
     if st.session_state.get("audio"):
-        st.audio(str(st.session_state.audio))
-        st.download_button("Download voice (mp3)", st.session_state.audio.read_bytes(),
-                           file_name="voice.mp3", mime="audio/mpeg")
+        a_path = st.session_state.audio
+        st.audio(str(a_path))
+        st.download_button("Download voice", a_path.read_bytes(), file_name=a_path.name,
+                           mime="audio/wav" if a_path.suffix == ".wav" else "audio/mpeg")
         st.download_button("Download story (json)", (folder / "story.json").read_bytes(),
                            file_name="story.json", mime="application/json")
