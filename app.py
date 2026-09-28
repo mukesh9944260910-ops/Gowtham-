@@ -120,7 +120,7 @@ def gemini_voice(texts, path, voice, model, style):
         with wave.open(io.BytesIO(base64.b64decode(it.output_audio.data))) as w:
             params = w.getparams()
             frames.append(w.readframes(w.getnframes()))
-            frames.append(b"\x00" * params.sampwidth * params.framerate // 2)  # 0.5s gap
+            frames.append(b"\x00" * (params.sampwidth * params.nchannels * params.framerate // 2))  # 0.5s gap
     with wave.open(str(path), "wb") as out:
         out.setparams(params)
         out.writeframes(b"".join(frames))
