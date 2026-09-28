@@ -16,12 +16,12 @@ SIGNOFF = """ஒரு விஷயம் நம்ம கவனிக்கண�
 [SUMMARY]
 
 இன்னும் இப்படிப்பட்ட மறைந்திருக்கும் கதைகளையும், நம்பிக்கைகளின் பின்னால் இருக்கும் வரலாற்றையும் ஆராய்ந்து பார்க்க… இது புராணம் பேசும். Subscribe பண்ணுங்க. அடுத்த கதையோடு மீண்டும் சந்திப்போம். வணக்கம்."""
-SIGNATURE = [
+SIGNATURE_EXAMPLES = [
     "சின்ன வயசுல இருந்து…",
     "ஆனா… இந்த ஒரு வரிக்குள்ள இவ்வளவு பெரிய விஷயம் இருக்குன்னு நமக்குத் தெரியுமா?",
-    "இது ஒரு சாதாரண … மட்டும் இல்ல. (fill the blank to suit the story)",
+    "இது ஒரு சாதாரண … மட்டும் இல்ல.",
     "இங்க ஒரு முக்கியமான விஷயம்…",
-    "இதை … என்று ஒரு ஆதாரமாக எடுத்துக்கொள்ளக் கூடாது. (fill the blank to suit the story)",
+    "இதை … என்று ஒரு ஆதாரமாக எடுத்துக்கொள்ளக் கூடாது.",
 ]
 SHOT_WORDS = 20  # about 8 seconds of Tamil narration
 
@@ -72,7 +72,8 @@ def call_json(prompt, schema, tokens=16000):
 
 
 def story_prompt(title, minutes):
-    phrases = "\n".join("- " + p for p in random.sample(SIGNATURE, 3))
+    examples = "\n".join("- " + p for p in SIGNATURE_EXAMPLES)
+    seed = random.randint(1000, 9999)
     return f"""You are the script writer of the Tamil YouTube channel "Puranam Pesum" (புராணம் பேசும்).
 Write a complete voice-over script in Tamil script for the topic: "{title}". Length: about {minutes * 120} words (a {minutes} minute voice-over at spoken Tamil pace).
 
@@ -96,8 +97,9 @@ LANGUAGE RULES:
 - No headings, no scene labels, no [Visual] cues, no stage directions. Clean voice-over text only.
 - The very first line must be exactly: {GREETING}
 
-SIGNATURE PHRASES for THIS story only (use these, each once or twice, woven in naturally; fill any blank to suit the story; do not use other stock phrases, so every story feels different):
-{phrases}
+SIGNATURE PHRASES (variation seed {seed}): this channel has recurring "signature phrases" in a friendly, curious, honest spoken-Tamil voice. Here are only EXAMPLES of the kind of phrase, to show the spirit:
+{examples}
+Do NOT copy these examples word for word, and do not reuse phrases from earlier scripts. For THIS story, invent 3-4 brand-new signature phrases of the same spirit (a personal memory hook, a "did you know" question, a "this is not just an ordinary X" line, an "important point here" line, a caution line), tied to this story's own characters, place and theme. Repeat each of your new phrases 2-3 times across the script so they feel like this story's signature. Every story must end up with different signature phrases.
 
 Split the voice-over into 6-10 consecutive parts ("scenes"); together they form the full script.
 Also give: youtube_title (catchy Tamil, under 70 chars), description (Tamil, 150-250 words, with hashtags), tags (15-20, Tamil and English mix)."""
