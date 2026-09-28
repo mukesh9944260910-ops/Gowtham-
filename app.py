@@ -1,4 +1,4 @@
-import asyncio, base64, io, json, os, re, time, wave
+import asyncio, base64, io, json, os, random, re, time, wave
 from pathlib import Path
 
 import edge_tts
@@ -10,8 +10,19 @@ from pydantic import BaseModel
 MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.1-flash-lite")
 OUT = Path("output")
 CHANNEL = "புராணம் பேசும்"
-GREETING = "தமிழுக்கும் தமிழனுக்கும் வணக்கம்!"
-OUTRO = f"இந்தக் கதை உங்களுக்குப் பிடித்திருந்தால், {CHANNEL} சேனலை மறக்காமல் சப்ஸ்க்ரைப் செய்யுங்கள். லைக் செய்து, ஷேர் செய்யுங்கள். நன்றி, வணக்கம்!"
+GREETING = "தமிழுக்கும் தமிழனுக்கும் வணக்கம்."
+SIGNOFF = """ஒரு விஷயம் நம்ம கவனிக்கணும்… புராணங்களையும், கோயில் மரபுகளையும், பக்திப் பாடல்களையும்… ஒன்றாகக் கலக்காமல் புரிஞ்சுக்கிட்டால்தான்… நம்முடைய பாரம்பரிய கதைகளின் உண்மையான அழகு இன்னும் தெளிவாகத் தெரியும்.
+
+[SUMMARY]
+
+இன்னும் இப்படிப்பட்ட மறைந்திருக்கும் கதைகளையும், நம்பிக்கைகளின் பின்னால் இருக்கும் வரலாற்றையும் ஆராய்ந்து பார்க்க… இது புராணம் பேசும். Subscribe பண்ணுங்க. அடுத்த கதையோடு மீண்டும் சந்திப்போம். வணக்கம்."""
+SIGNATURE = [
+    "சின்ன வயசுல இருந்து…",
+    "ஆனா… இந்த ஒரு வரிக்குள்ள இவ்வளவு பெரிய விஷயம் இருக்குன்னு நமக்குத் தெரியுமா?",
+    "இது ஒரு சாதாரண … மட்டும் இல்ல. (fill the blank to suit the story)",
+    "இங்க ஒரு முக்கியமான விஷயம்…",
+    "இதை … என்று ஒரு ஆதாரமாக எடுத்துக்கொள்ளக் கூடாது. (fill the blank to suit the story)",
+]
 SHOT_WORDS = 20  # about 8 seconds of Tamil narration
 
 
@@ -21,12 +32,14 @@ class Story(BaseModel):
     description: str
     tags: list[str]
     scenes: list[str]
+    summary_line: str
 
 
 class Meta(BaseModel):
     youtube_title: str
     description: str
     tags: list[str]
+    summary_line: str
 
 
 class Shots(BaseModel):
@@ -59,20 +72,40 @@ def call_json(prompt, schema, tokens=16000):
 
 
 def story_prompt(title, minutes):
-    return f"""You are the scriptwriter of the Tamil YouTube channel "{CHANNEL}" (Puranam Pesum) that tells puranam stories.
-Write a gripping storytelling narration in Tamil script for the title: "{title}". Length: about {minutes * 120} words.
-Rules:
-- The very first line must be exactly: {GREETING} Then flow smoothly into a strong hook.
-- Devotional, respectful, emotional storytelling in simple spoken Tamil with short sentences (it will be voiced).
-- Ending: after the moral of the story, smoothly and warmly invite viewers to subscribe to the "{CHANNEL}" channel, like and share, then close with a warm goodbye. It must feel natural, not abrupt.
-- No headings, no scene labels, no stage directions, no English words inside the narration.
-Split the narration into 5-8 consecutive parts ("scenes"); together they form the full script.
+    phrases = "\n".join("- " + p for p in random.sample(SIGNATURE, 3))
+    return f"""You are the script writer of the Tamil YouTube channel "Puranam Pesum" (புராணம் பேசும்).
+Write a complete voice-over script in Tamil script for the topic: "{title}". Length: about {minutes * 120} words (a {minutes} minute voice-over at spoken Tamil pace).
+
+CHANNEL IDENTITY: spoken/colloquial Tamil (not too formal, not too slang). The channel explores puranas, temple traditions, devotional songs and beliefs and their background, and clearly separates legend from history. Never present myth as fact.
+NARRATOR: "a knowledgeable friend", not a scholar showing off; a friend who tells the story with curiosity. Tone: calm + curious + respectful. Respect belief but do not ask for blind belief. Never over-dramatic, never mocking.
+
+REQUIRED STRUCTURE (flow through these in order, without writing the headings):
+1. HOOK: quote a familiar line / belief / song and create curiosity ("did you know such a big story is inside this?").
+2. QUESTION DROP: 2-3 short questions in a row.
+3. FOUNDATION: explain the basic idea simply.
+4. DEEP DIVE: go deep with literature / temple / traditional sources.
+5. NUANCE/CLARITY: a clear honesty moment: "this should not be understood like this", clearly separating legend from fact.
+6. EMOTIONAL CORE: make the listener feel the spiritual beauty of the story.
+7. CLOSING REFLECTION: start with "ஒரு விஷயம் நம்ம கவனிக்கணும்…" and reflect on the story.
+Do NOT write the sign-off; the app adds the fixed sign-off after your script. Give the story-specific one-line summary separately in summary_line (one Tamil sentence).
+
+LANGUAGE RULES:
+- Short sentences, one idea per sentence. Use "…" (ellipsis) often for pauses and suspense.
+- Frequent rhetorical questions. Use parallel repetition (e.g. "ஒன்பது கிரகங்கள்… ஒன்பது விதமான தாக்கங்கள்…").
+- Minimum English words (only unavoidable technical terms).
+- No headings, no scene labels, no [Visual] cues, no stage directions. Clean voice-over text only.
+- The very first line must be exactly: {GREETING}
+
+SIGNATURE PHRASES for THIS story only (use these, each once or twice, woven in naturally; fill any blank to suit the story; do not use other stock phrases, so every story feels different):
+{phrases}
+
+Split the voice-over into 6-10 consecutive parts ("scenes"); together they form the full script.
 Also give: youtube_title (catchy Tamil, under 70 chars), description (Tamil, 150-250 words, with hashtags), tags (15-20, Tamil and English mix)."""
 
 
 def meta_prompt(script):
-    return f"""This is the Tamil narration script for a video on the channel "{CHANNEL}".
-Write: youtube_title (catchy Tamil, under 70 chars), description (Tamil, 150-250 words, short summary + hashtags), tags (15-20, Tamil and English mix).
+    return f"""This is the Tamil voice-over script for a video on the channel "Puranam Pesum".
+Write: youtube_title (catchy Tamil, under 70 chars), description (Tamil, 150-250 words, short summary + hashtags), tags (15-20, Tamil and English mix), summary_line (one Tamil sentence summarising this story).
 SCRIPT:
 {script[:6000]}"""
 
@@ -93,14 +126,10 @@ def chunk_scenes(text, words=90):
     return scenes
 
 
-def ensure_intro_outro(scenes):
-    scenes = [s for s in scenes if s.strip()]
-    if not scenes:
-        return scenes
-    if "வணக்கம்" not in scenes[0][:80]:
+def ensure_intro(scenes):
+    scenes = [x for x in scenes if x.strip()]
+    if scenes and "தமிழுக்கும் தமிழனுக்கும் வணக்கம்" not in scenes[0][:80]:
         scenes[0] = GREETING + " " + scenes[0]
-    if CHANNEL not in scenes[-1]:
-        scenes[-1] = scenes[-1].rstrip() + " " + OUTRO
     return scenes
 
 
@@ -108,14 +137,19 @@ def make_story(title, minutes, own_script):
     if own_script.strip():
         meta = call_json(meta_prompt(own_script), Meta, tokens=4000)
         scenes = chunk_scenes(own_script)
+        has_signoff = "இது புராணம் பேசும்" in own_script
     else:
-        d = call_json(story_prompt(title, minutes), Story)
-        meta, scenes = d, d["scenes"]
+        meta = call_json(story_prompt(title, minutes), Story)
+        scenes = meta["scenes"]
+        has_signoff = False
+    scenes = ensure_intro(scenes)
+    if not has_signoff:
+        scenes.append(SIGNOFF.replace("[SUMMARY]", meta["summary_line"]))
     return {
         "youtube_title": meta["youtube_title"],
         "description": meta["description"],
         "tags": meta["tags"],
-        "scenes": ensure_intro_outro(scenes),
+        "scenes": scenes,
     }
 
 
@@ -244,7 +278,7 @@ st.set_page_config(page_title="Puranam Pesum Studio", page_icon="🪔")
 st.title("🪔 Puranam Pesum Studio")
 
 title = st.text_input("Story title", placeholder="e.g. Markandeyan and Yama")
-minutes = st.slider("Video length (minutes)", 3, 15, 6)
+minutes = st.slider("Video length (minutes)", 3, 15, 7)
 with st.expander("Ennoda own script use panna (optional)"):
     own = st.text_area("Tamil script paste pannunga", height=200)
 
